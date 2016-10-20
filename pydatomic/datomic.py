@@ -42,14 +42,16 @@ class Datomic(object):
         assert r.status_code in (200, 201), (r.status_code, r.text)
         return loads(r.content)
 
-    def query(self, dbname, query, extra_args=[], history=False):
+    def query(self, dbname, query, extra_args=None, history=False):
+        if extra_args is None:
+            extra_args = []
         args = '[{:db/alias ' + self.storage + '/' + dbname
         if history:
             args += ' :history true'
         args += '} ' + ' '.join(str(a) for a in extra_args) + ']'
         r = requests.get(urljoin(self.location, 'api/query'),
-                         params={'args': args, 'q':query},
-                         headers={'Accept':'application/edn'})
+                         params={'args': args, 'q': query},
+                         headers={'Accept': 'application/edn'})
         assert r.status_code == 200, r.text
         return loads(r.content)
 
