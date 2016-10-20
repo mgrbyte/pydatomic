@@ -28,17 +28,20 @@ class Datomic(object):
         return self._session.post(*args, **kw)
 
     def db_url(self, dbname):
-        return urljoin(self.location, 'data/') + self.storage + '/' + dbname
+        return (urljoin(self.location, 'data/') +
+                self.storage + '/' +
+                dbname)
 
     def create_database(self, dbname):
-        r = requests.post(self.db_url(''), data={'db-name':dbname})
+        r = self._session.post(self.db_url(''), data={'db-name':dbname})
         assert r.status_code in (200, 201), r.text
         return Database(dbname, self)
 
     def transact(self, dbname, data):
         data = '[%s\n]' % '\n'.join(data)
-        r = requests.post(self.db_url(dbname)+'/', data={'tx-data':data},
-                          headers={'Accept':'application/edn'})
+        r = self._session.post(self.db_url(dbname)+'/',
+                               data={'tx-data':data},
+                               headers={'Accept':'application/edn'})
         assert r.status_code in (200, 201), (r.status_code, r.text)
         return loads(r.content)
 
