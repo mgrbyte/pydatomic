@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import requests
-from .edn import loads
+
+from . import edn
 from .compat import urljoin
 
 
@@ -43,7 +44,7 @@ class Datomic(object):
                                data={'tx-data':data},
                                headers={'Accept':'application/edn'})
         assert r.status_code in (200, 201), (r.status_code, r.text)
-        return loads(r.content)
+        return edn.loads(r.content)
 
     def query(self, dbname, query, extra_args=None, history=False):
         if extra_args is None:
@@ -52,17 +53,19 @@ class Datomic(object):
         if history:
             args += ' :history true'
         args += '} ' + ' '.join(str(a) for a in extra_args) + ']'
-        r = requests.get(urljoin(self.location, 'api/query'),
-                         params={'args': args, 'q': query},
-                         headers={'Accept': 'application/edn'})
+        r = self._session.get(urljoin(self.location, 'api/query'),
+                              params={'args': args, 'q': query},
+                              headers={'Accept': 'application/edn'})
         assert r.status_code == 200, r.text
-        return loads(r.content)
+        return edn.loads(r.content)
 
     def entity(self, dbname, eid):
-        r = requests.get(self.db_url(dbname) + '/-/entity', params={'e':eid},
-                         headers={'Accept':'application/edn'})
+        r = self._session.get(self.db_url(dbname) + '/-/entity',
+                              params={'e':eid},
+                              headers={'Accept':'application/edn'})
         assert r.status_code == 200
-        return loads(r.content)
+        return edn.loads(r.content)
+
 
 if __name__ == '__main__':
     q = """[{
@@ -80,5 +83,6 @@ if __name__ == '__main__':
     r = db.query('[:find ?e ?n :where [?e :person/name ?n]]')
     print(r)
     eid = r[0][0]
-    print(db.query('[:find ?n :in $ ?e :where [?e :person/name ?n]]', [eid], history=True))
+    print(db.query('[:find ?n :in $ ?e :where [?e :person/name ?n]]',
+                   [eid], history=True))
     print(db.entity(eid))
