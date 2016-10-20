@@ -1,23 +1,31 @@
 # -*- coding: utf-8 -*-
 import requests
-from urlparse import urljoin
-from pydatomic.edn import loads
+from .edn import loads
+from .compat import urljoin
 
 
 class Database(object):
+
     def __init__(self, name, conn):
         self.name = name
         self.conn = conn
 
     def __getattr__(self, name):
         def f(*args, **kwargs):
-            return getattr(self.conn, name)(self.name, *args, **kwargs)
+            get_db = getattr(self.conn, name)
+            return get_db(self.name, *args, **kwargs)
         return f
 
+
 class Datomic(object):
+
     def __init__(self, location, storage):
         self.location = location
         self.storage = storage
+        self._session = requests.Session()
+
+    def _post(self, *args, **kw):
+        return self._session.post(*args, **kw)
 
     def db_url(self, dbname):
         return urljoin(self.location, 'data/') + self.storage + '/' + dbname
