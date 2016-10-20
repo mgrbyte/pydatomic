@@ -2,21 +2,38 @@
 from datetime import datetime
 from uuid import UUID
 
+import six
+
+
+STOP_CHARS = ' ,\n\r\t'
+
+CHAR_MAP = {
+    'a': '\a',
+    'b': '\b',
+    'f': '\f',
+    'n': '\n',
+    'r': '\r',
+    't': '\t',
+    'v': '\v'
+}
+
+
 def encode_string(s):
     r"""
-    >>> print encode_string(u'"Hello, world"\\n')
+    >>> print(encode_string(u'"Hello, world"\\n'))
     "\"Hello, world\"\\n"
     """
-    return '"%s"' % s.encode('utf-8').replace('\\', '\\\\').replace('"', '\\"')
+    s = s.encode('utf-8')
+    return '"%s"' % s.replace('\\', '\\\\').replace('"', '\\"')
 
-STOP_CHARS = " ,\n\r\t"
 
 def coroutine(func):
     def start(*args,**kwargs):
         cr = func(*args,**kwargs)
-        cr.next()
+        next(cr)
         return cr
     return start
+
 
 @coroutine
 def printer():
@@ -29,18 +46,23 @@ def appender(l):
     while True:
         l.append((yield))
 
+
 def inst_handler(time_string):
     return datetime.strptime(time_string[:23], '%Y-%m-%dT%H:%M:%S.%f')
 
-tag_handlers = {'inst':inst_handler,
-                'uuid':UUID,
-                'db/fn':lambda x:x}
+
+tag_handlers = {
+    'inst': inst_handler,
+    'uuid': UUID,
+    'db/fn': lambda x: x
+}
+
 
 @coroutine
 def tag_handler(tag_name):
     while True:
         c = (yield)
-        if c in STOP_CHARS+'{"[(\\#':
+        if c in STOP_CHARS + '{"[(\\#':
             break
         tag_name += c
     elements = []
@@ -49,22 +71,29 @@ def tag_handler(tag_name):
     while not elements:
         handler.send((yield))
     if tag_name in tag_handlers:
-        yield tag_handlers[tag_name](elements[0]), True
+        yield (tag_handlers[tag_name](elements[0]), True)
     else:
-        print("No tag handler for %s" % tag_name)
-        yield None, True
+        print('No tag handler for', tag_name)
+        yield (None, True)
+
 
 @coroutine
 def character_handler():
     r = (yield)
+    stopmap = {
+        'newline': '\n',
+        'space': ' ',
+        'tab': '\t'
+    }
     while 1:
         c = (yield)
         if not c.isalpha():
             if len(r) == 1:
-                yield r, False
+                yield (r, False)
             else:
-                yield {'newline':'\n', 'space':' ', 'tab':'\t'}[r], False
+                yield (stopmap[r], False)
         r += c
+
 
 def parse_number(s):
     s = s.rstrip('MN').upper()
@@ -72,33 +101,26 @@ def parse_number(s):
         return int(s)
     return float(s)
 
+
 @coroutine
 def number_handler(s):
     while 1:
         c = (yield)
-        if c in "0123456789+-eEMN.":
+        if c in '0123456789+-eEMN.':
             s += c
         else:
-            yield parse_number(s), False
+            yield (parse_number(s), False)
+
 
 @coroutine
 def symbol_handler(s):
-    while 1:
+    while True:
         c = (yield)
         if c in '}])' + STOP_CHARS:
             yield s, False
         else:
             s += c
 
-CHAR_MAP = {
-    "a": "\a",
-    "b": "\b",
-    "f": "\f",
-    "n": "\n",
-    "r": "\r",
-    "t": "\t",
-    "v": "\v"
-}
 
 @coroutine
 def parser(target, stop=None):
@@ -181,25 +203,39 @@ def parser(target, stop=None):
                     target.send(frozenset(l))
             else:
                 if len(l) % 2:
-                    raise Exception("Map literal must contain an even number of elements")
-                target.send(dict(zip(l[::2], l[1::2])))     # No frozendict yet
+                    raise Exception((
+                        'Map literal must contain an even number '
+                        'of elements'))
+                # No frozendict yet
+                target.send(dict(zip(l[::2], l[1::2])))
         else:
             raise ValueError("Unexpected character in edn", c)
+
 
 def loads(s):
     l = []
     target = parser(appender(l))
-    for c in s.decode('utf-8'):
-        target.send(c)
+    if not isinstance(s, six.text_type):
+        s = s.decode('utf-8')
+    for char in s:
+        target.send(char)
     target.send(' ')
     if len(l) != 1:
-        raise ValueError("Expected exactly one top-level element in edn string", s)
+        raise ValueError(
+            "Expected exactly one top-level element in edn string", s)
     return l[0]
+
 
 if __name__ == '__main__':
     print(loads(
-        b'(:graham/stratton true  \n , "A string with \\n \\"s" true #uuid "f81d4fae7dec11d0a76500a0c91e6bf6")'))
-    print(loads(b'[\space \\\xE2\x82\xAC [true []] ;true\n[true #inst "2012-09-10T23:39:43.309-00:00" true ""]]'))
-    print(loads(b' {true false nil    [true, ()] 6 {#{nil false} {nil \\newline} }}'))
-    print(loads(b'[#{6.22e-18, -3.1415, 1} true #graham #{"pie" "chips"} "work"]'))
+        (b'(:graham/stratton true  \n , '
+         b'"A string with \\n \\"s" true #uuid '
+         b'"f81d4fae7dec11d0a76500a0c91e6bf6")')))
+    print(loads(b'[\space \\\xE2\x82\xAC [true []] ;true'
+                b'\n[true #inst "2012-09-10T23:39:43.309-00:00"'
+                b'true ""]]'))
+    print(loads(b' {true false nil    [true, ()] 6 {#{nil false} '
+                b'{nil \\newline} }}'))
+    print(loads(b'[#{6.22e-18, -3.1415, 1} true '
+                b'#graham #{"pie" "chips"} "work"]'))
     print(loads(b'(\\a .5)'))
